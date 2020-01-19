@@ -66,10 +66,10 @@ class MeatType(enum.Enum):
     VEGAN = 4
 
     @classmethod
-    def from_class_list(cls, class_list: List[str]):
-        for key, value in MEAT_TYPE_CSS_CLASSES.items():
-            if key in class_list:
-                return value
+    def from_class_list(cls, class_list: List[str]) -> List["MeatType"]:
+        return [meat_type
+                for css_class, meat_type in MEAT_TYPE_CSS_CLASSES.items()
+                if css_class in class_list]
 
 
 # Meat type can most easily be parsed by checking for the CSS classes
@@ -142,14 +142,14 @@ class Meal(NamedTuple):
     A single meal in a canteen's menue.
 
     The meal comprises a category (such as 'Tellergericht'), a main component (the first named component of the meal, a
-    list of auxiliary components, the meat/vegetarian flag, the price (without student discount) and the nutritional
+    list of auxiliary components, the meat/vegetarian flag, the price (including student discount) and the nutritional
     values of the total meal (as far as provided)
     """
     menu_category: str
     main_component: MealComponent
     aux_components: List[MealComponent]
-    meat: MeatType
-    price: Optional[Decimal]
+    meat: List[MeatType]
+    price: Optional[Decimal]  # includes student discount (e.g. 1.80€ instead of 3.30€ for the "Tellergericht")
     nutritional_values: NutritionalValues
 
 
