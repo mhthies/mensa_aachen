@@ -176,6 +176,7 @@ def fetch_menue(canteen: Canteens) -> str:
 
     r = requests.get(url)
     r.raise_for_status()
+    r.encoding = 'utf-8'
     return r.text
 
 
