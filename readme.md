@@ -37,4 +37,7 @@ Which will yield a result in a form like
 }
 ```
 
-
+The types `Meal`, `MealComponent`, and `NutritionalValues`, used in the result, are NamedTuples.
+`Flags` and `MeatType` are Enums.
+The `value` of each member of `Flags` corresponds to the abbreviation used in the menue. 
+For more information about the fields and available enum options, please take a look at the module's source code.
