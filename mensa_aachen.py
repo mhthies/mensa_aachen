@@ -207,7 +207,7 @@ def parse_dishes(soup: BeautifulSoup) -> Dict[datetime.date, Menu]:
     days: Dict[datetime.date, Menu] = {}
     for date_div in soup.find_all(class_='preventBreak'):
         assert(isinstance(date_div, bs4.Tag))
-        heading = date_div.find(class_='default-headline')
+        heading = date_div.find('h3')
         if not heading:
             continue
         date_match = RE_DATE.search(heading.a.string)
