@@ -142,8 +142,10 @@ class Meal(NamedTuple):
     A single meal in a canteen's menue.
 
     The meal comprises a category (such as 'Tellergericht'), a main component (the first named component of the meal, a
-    list of auxiliary components, the meat/vegetarian flag, the price (including student discount) and the nutritional
-    values of the total meal (as far as provided)
+    list of auxiliary components, the meat/vegetarian indication, the price (including student discount) and the
+    nutritional values of the total meal (as far as provided).
+
+    Side dishes are also Meals, but without a price and without meat indication.
     """
     menu_category: str
     main_component: MealComponent
@@ -153,7 +155,15 @@ class Meal(NamedTuple):
     nutritional_values: NutritionalValues
 
 
-def get_meals(canteen: Canteens) -> Dict[datetime.date, List[Meal]]:
+class Menue(NamedTuple):
+    """
+    A full menu: All meals at one day in one canteen, consisting of main meals and side dishes
+    """
+    main_meals: List[Meal]
+    side_dishes: List[Meal]
+
+
+def get_meals(canteen: Canteens) -> Dict[datetime.date, Menue]:
     """
     Fetch and parse the meals of every day of the current week in the specified canteen
 
@@ -183,7 +193,7 @@ def fetch_menue(canteen: Canteens) -> str:
 RE_PRICE = re.compile(r'([\d,]+)\s*€')
 
 
-def parse_meals(soup: BeautifulSoup) -> Dict[datetime.date, List[Meal]]:
+def parse_meals(soup: BeautifulSoup) -> Dict[datetime.date, Menue]:
     """
     Parse all meals of the current week from a menu HTML document of one canteen, parsed with BeautifulSoup4.
 
@@ -199,72 +209,117 @@ def parse_meals(soup: BeautifulSoup) -> Dict[datetime.date, List[Meal]]:
 
         meals: List[Meal] = []
         for meal_row in date_div.find('table', class_='menues').find_all('td', class_='menue-wrapper'):
-            meal_category = meal_row.find(class_='menue-category').string
-            meal_meat = MeatType.from_class_list(meal_row.parent['class'])
+            meals.extend(parse_menue_row(meal_row))
+        side_dishes: List[Meal] = []
+        for meal_row in date_div.find('table', class_='extras').find_all('td', class_='menue-wrapper'):
+            side_dishes.extend(parse_menue_row(meal_row))
 
-            # Parse meal description
-            meal_text = meal_row.find(class_='expand-nutr')
-            assert(isinstance(meal_text, bs4.Tag))
-            meal_components = parse_meal_components(meal_text)
-            if not meal_components:
-                logger.info("A meal does not contain any components.")
-                continue
-
-            # Parse price
-            price_match = RE_PRICE.search(meal_row.find(class_='menue-price').string)
-            meal_price = Decimal(price_match[1].replace(',', '.')) if price_match else None
-
-            # Parse nutritional values
-            nutritional_info = meal_row.find(class_='nutr-info')
-            nutritional_values = parse_nutritional_values(nutritional_info)
-
-            # Construct Meal object
-            meals.append(Meal(meal_category, meal_components[0], meal_components[1:], meal_meat, meal_price,
-                              nutritional_values))
-
-        days[monday + datetime.timedelta(days=weekday_offset)] = meals
+        days[monday + datetime.timedelta(days=weekday_offset)] = Menue(meals, side_dishes)
 
     return days
 
 
-def parse_meal_components(meal_content: bs4.Tag) -> List[MealComponent]:
+def parse_menue_row(meal_row: bs4.Tag) -> List[Meal]:
     """
-    Split the contents of span.expand-nutr into separate menu components and their (ingredient) flags
+    Parse all meals in a single menue row.
+
+    Typically a menue row only contains only one meal with all its attributes (menue category, meal description (with
+    multiple components, price, nutritional values). However, this does not hold for the side dishes: They are listed
+    as multiple meals within one row, with entangled attributes. This function finds all meals in both cases and
+    composes the correct attributes.
+    """
+    meal_category = meal_row.find(class_='menue-category').string
+    meal_meat = MeatType.from_class_list(meal_row.parent.attrs.get('class', []))
+
+    # Parse meal descriptions (all meals with all components)
+    # Sometimes, the meal descriptions are directly in the span.menu-desc, sometimes, they are encapsulated in a
+    # span.expand-nutr
+    meal_text = meal_row.find(class_='expand-nutr')
+    if not meal_text:
+        meal_text = meal_row.find(class_='menue-desc')
+    if not meal_text:
+        return []
+    assert(isinstance(meal_text, bs4.Tag))
+    # Each meal_row might contain multiple meal descriptions with multiple components each.
+    meal_descriptions: List[List[MealComponent]] = parse_meal_components(meal_text)
+    if not meal_descriptions:
+        logger.info("A row does not contain any meals.")
+        return []
+
+    # Parse price (if existing)
+    meal_price = None
+    price_tag = meal_row.find(class_='menue-price')
+    if price_tag:
+        assert(isinstance(price_tag, bs4.Tag))
+        price_match = RE_PRICE.search(price_tag.string)
+        if price_match:
+            meal_price = Decimal(price_match[1].replace(',', '.'))
+
+    # Parse all nutritional value information (might be multiple for, e.g. side dishes)
+    nutritional_values = [parse_nutritional_values(nutr_info_tag)
+                          for nutr_info_tag in meal_row.find_all(class_='nutr-info')]
+    # Fill up nutritional values to get one for every meal
+    nutritional_values += ([NutritionalValues(None, None, None, None)]
+                           * max(0, len(meal_descriptions) - len(nutritional_values)))
+
+    # Construct Meal objects
+    return [Meal(meal_category, meal_components[0], meal_components[1:], meal_meat, meal_price, meal_nutr)
+            for meal_components, meal_nutr in zip(meal_descriptions, nutritional_values)]
+
+
+def parse_meal_components(meal_content: bs4.Tag) -> List[List[MealComponent]]:
+    """
+    Split the contents of span.expand-nutr into separate meals with separate meal components and their (ingredient)
+    flags
+
+    A single row in the menue may contain multiple meals (divided with span.divider tags – mainly used for the side
+    dishes) and each of them may have multiple components (divided by "|").
 
     :param meal_content: The span.expand-nutr PageElement of a single meal
-    :return: A list of meal components, each with name and list of ingredient flags
+    :return: A list of meals, each being a list of meal components
     """
-    meal_components = []
-    current_meal_item: Optional[MealComponent] = None
+    meals = []
+    current_meal = []
+    current_meal_cmp: Optional[MealComponent] = None
     for element in meal_content.children:
         if isinstance(element, bs4.NavigableString):
             for meal_item_name in element.split('|'):
                 if not meal_item_name.strip():
                     continue
-                if current_meal_item is not None:
-                    meal_components.append(current_meal_item)
-                current_meal_item = MealComponent(meal_item_name.strip(), [])
+                if current_meal_cmp is not None:
+                    current_meal.append(current_meal_cmp)
+                current_meal_cmp = MealComponent(meal_item_name.strip(), [])
 
-        elif 'class' in element.attrs and {'menue-nutr'} & set(element.attrs['class']):
+        elif 'class' in element.attrs and {'menue-nutr', 'nutr-info'} & set(element.attrs['class']):
             # Skip expand/"+" button
             continue
+
+        elif 'class' in element.attrs and 'seperator' in element.attrs['class']:
+            if current_meal_cmp is not None:
+                current_meal.append(current_meal_cmp)
+                current_meal_cmp = None
+            if current_meal:
+                meals.append(current_meal)
+                current_meal = []
 
         elif element.name == "sup":
             # Skip the "Preis ohne Pfand" annotation
             if element.string.strip() == "Preis ohne Pfand":
                 continue
-            if current_meal_item is not None:
+            if current_meal_cmp is not None:
                 for flag_id in element.string.strip().split(','):
                     try:
                         flag = Flags(flag_id)
                     except ValueError as e:
                         logger.warning(e)
                         continue
-                    current_meal_item[1].append(flag)
+                    current_meal_cmp[1].append(flag)
 
-    if current_meal_item is not None:
-        meal_components.append(current_meal_item)
-    return meal_components
+    if current_meal_cmp is not None:
+        current_meal.append(current_meal_cmp)
+    if current_meal:
+        meals.append(current_meal)
+    return meals
 
 
 RE_CALORIC_VAL = re.compile(r'Brennwert\s*=\s*([\d,]+)\s*kJ')
@@ -280,8 +335,6 @@ def parse_nutritional_values(nutr_content: Optional[bs4.Tag]) -> NutritionalValu
     :param nutr_content: The span.nutr-info PageElement of a single meal or None, if nutritional values were not found
         or could not be parsed
     """
-    if nutr_content is None:
-        return NutritionalValues(None, None, None, None)
     text = nutr_content.get_text()
     matches = (
         RE_CALORIC_VAL.search(text),
