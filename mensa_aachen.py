@@ -123,6 +123,7 @@ class Flags(enum.Enum):
     SCHWEFELDIOXID_ODER_SULFITE = "L"
     LUPINEN = "M"
     WEICHTIERE = "N"
+    SCHARF = "scharf"
 
 
 class MealComponent(NamedTuple):
