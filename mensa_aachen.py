@@ -192,11 +192,12 @@ def fetch_menu(canteen: Canteens) -> str:
 
 
 RE_PRICE = re.compile(r'([\d,]+)\s*€')
+RE_DATE = re.compile(r'(\d\d)\.(\d\d)\.(\d\d\d\d)')
 
 
 def parse_dishes(soup: BeautifulSoup) -> Dict[datetime.date, Menu]:
     """
-    Parse all dishes of the current week from a menu HTML document of one canteen, parsed with BeautifulSoup4.
+    Parse all dishes from a menu HTML document of one canteen, parsed with BeautifulSoup4.
 
     :return: A dict, mapping dates to lists of dishes
     """
@@ -204,9 +205,13 @@ def parse_dishes(soup: BeautifulSoup) -> Dict[datetime.date, Menu]:
     monday = today - datetime.timedelta(days=today.weekday())
 
     days: Dict[datetime.date, Menu] = {}
-    for weekday, weekday_offset in (('Montag', 0), ('Dienstag', 1), ('Mittwoch', 2), ('Donnerstag', 3), ('Freitag', 4)):
-        date_div = soup.find(id=weekday)
+    for date_div in soup.find_all(class_='preventBreak'):
         assert(isinstance(date_div, bs4.Tag))
+        heading = date_div.find(class_='default-headline')
+        if not heading:
+            continue
+        date_match = RE_DATE.search(heading.a.string)
+        date = datetime.date(int(date_match[3]), int(date_match[2]), int(date_match[1]))
 
         dishes: List[Dish] = []
         for dish_row in date_div.find('table', class_='menues').find_all('td', class_='menue-wrapper'):
@@ -215,7 +220,7 @@ def parse_dishes(soup: BeautifulSoup) -> Dict[datetime.date, Menu]:
         for dish_row in date_div.find('table', class_='extras').find_all('td', class_='menue-wrapper'):
             side_dishes.extend(parse_menu_row(dish_row))
 
-        days[monday + datetime.timedelta(days=weekday_offset)] = Menu(dishes, side_dishes)
+        days[date] = Menu(dishes, side_dishes)
 
     return days
 
