@@ -77,3 +77,14 @@ The types `Menu`, `Dish`, `DishComponent`, and `NutritionalValues`, used in the 
 `Flags` and `MeatType` are Enums.
 The `value` of each member of `Flags` corresponds to the abbreviation used in the menu. 
 For more information about the fields and available enum options, please take a look at the module's source code.
+
+
+## Installing
+
+The module can be installed from its git repository via pip:
+`pip install git+https://github.com/mhthies/mensa_aachen.git@master`
+
+
+## License
+
+This neat library is published under the terms of the MIT license.
