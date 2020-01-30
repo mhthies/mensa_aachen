@@ -12,6 +12,7 @@ setup(name='mensa-aachen',
       install_requires=[
           'requests>=2.22',
           'beautifulsoup4>=4.8',
+          'lxml>=4.4, <5',
       ],
       classifiers=[
           "Programming Language :: Python :: 3",
