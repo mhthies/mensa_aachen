@@ -64,6 +64,7 @@ class MeatType(enum.Enum):
     GEFLUEGEL = 2
     VEGETARIAN = 3
     VEGAN = 4
+    FISCH = 5
 
     @classmethod
     def from_class_list(cls, class_list: List[str]) -> List["MeatType"]:
@@ -79,6 +80,7 @@ MEAT_TYPE_CSS_CLASSES = {
     'Rind': MeatType.RIND,
     'Schwein': MeatType.SCHWEIN,
     'Geflügel': MeatType.GEFLUEGEL,
+    'Fisch': MeatType.FISCH,
 }
 
 
